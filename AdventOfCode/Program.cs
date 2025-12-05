@@ -1,0 +1,16 @@
+﻿using AdventOfCode.Days;
+
+namespace AdventOfCode;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        var sessionToken = File.ReadAllText("../../../../session.txt").Trim();
+        FileFetch.SetSessionToken(sessionToken);
+        
+        new Day5().Run();
+        
+        Console.ReadKey();
+    }
+}
