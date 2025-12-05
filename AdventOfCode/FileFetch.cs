@@ -33,9 +33,4 @@ public class FileFetch
         var response = client.GetStringAsync(_uri).Result;
         return response;
     }
-    
-    public string[] FetchAsLines()
-    {
-        return FetchAsString().Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-    }
 }

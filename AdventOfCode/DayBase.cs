@@ -6,6 +6,12 @@ public abstract class DayBase
     protected abstract int Day { get; }
     
     public abstract void Run();
+
+    protected string[] GetAocInputAsLines()
+    {
+        string input = GetAocInput();
+        return input.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+    }
     
     protected string GetAocInput()
     {
