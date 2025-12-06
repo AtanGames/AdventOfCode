@@ -3,7 +3,7 @@
 public class Day5 : DayBase
 {
     protected override int Day => 5;
-    
+
     public override void Run()
     {
         string input = GetAocInput();
