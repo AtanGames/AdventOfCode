@@ -1,4 +1,5 @@
-﻿using AdventOfCode.Days2025;
+﻿using AdventOfCode.Days2024;
+using AdventOfCode.Days2025;
 
 namespace AdventOfCode;
 
@@ -9,7 +10,7 @@ class Program
         var sessionToken = File.ReadAllText("../../../../session.txt").Trim();
         FileFetch.SetSessionToken(sessionToken);
         
-        new Day5().Run();
+        new Day24().Run();
         
         Console.ReadKey();
     }

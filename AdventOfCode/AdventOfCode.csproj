@@ -14,8 +14,4 @@
       </Content>
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Days2024\" />
-    </ItemGroup>
-
 </Project>
