@@ -99,21 +99,19 @@ public class Day8 : DayBase
             circuitCounts[c]++;
         }
         
-        var sortedCirc = circuitCounts.ToList();
-        sortedCirc.Sort((a, b) => b.CompareTo(a));
-        
-        Console.WriteLine("Top 3 circuit sizes: " + sortedCirc[1] + ", " + sortedCirc[2] + ", " + sortedCirc[3]);
-        
-        long result = (long)sortedCirc[1] * (long)sortedCirc[2] * (long)sortedCirc[3];
-        
-        Console.WriteLine("Result: " + result);
+        //Part 1
+        //var sortedCirc = circuitCounts.ToList();
+        //sortedCirc.Sort((a, b) => b.CompareTo(a));
+        //Console.WriteLine("Top 3 circuit sizes: " + sortedCirc[1] + ", " + sortedCirc[2] + ", " + sortedCirc[3]);
+        //long result = (long)sortedCirc[1] * (long)sortedCirc[2] * (long)sortedCirc[3];
+        //Console.WriteLine("Result: " + result);
         
         Console.WriteLine("Circuit counts: " + string.Join(", ", circuitCounts));
 
         var p1 = points[lastLink.Item1];
         var p2 = points[lastLink.Item2];
         var p1X = (long)p1.X;
-        var p2X = (long)p1.X;
+        var p2X = (long)p2.X;
 
         var res = p1X * p2X;
         Console.WriteLine("Final Result: " + res);
