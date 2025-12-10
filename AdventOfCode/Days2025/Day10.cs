@@ -18,7 +18,7 @@ public class Day10 : DayBase
         return base.GetAocInput();
 
         return
-            "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}\n[...#.] (0,2,3,4) (2,3) (0,4) (0,1,2) (1,2,3,4) {7,5,12,7,2}\n[.###.#] (0,1,2,3,4) (0,3,4) (0,1,2,4,5) (1,2) {10,11,11,5,10,5}";
+           "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}\n[...#.] (0,2,3,4) (2,3) (0,4) (0,1,2) (1,2,3,4) {7,5,12,7,2}\n[.###.#] (0,1,2,3,4) (0,3,4) (0,1,2,4,5) (1,2) {10,11,11,5,10,5}";
     }
 
     public override void Run()
@@ -27,8 +27,8 @@ public class Day10 : DayBase
         //BruteForceSolve();
         
         Stopwatch sw = Stopwatch.StartNew();
-        
-        JoltageSolveV4();
+
+        JoltageSolveV6();
         
         sw.Stop();
         
@@ -40,7 +40,7 @@ public class Day10 : DayBase
         var lines = GetAocInputAsLines();
 
         var tmp = lines.ToList();
-        tmp.Sort((t1, t2) => t1.Length.CompareTo(t2.Length));
+        tmp.Sort((t1, t2) => t2.Length.CompareTo(t1.Length));
         lines = tmp.ToArray();
         
         targetStates = new (int targetMask, int targetCount)[lines.Length];
@@ -49,6 +49,7 @@ public class Day10 : DayBase
 
         int maxV = 0;
         int maxVLength = 0;
+        int maxButtonCount = 0;
         
         for (var i = 0; i < lines.Length; i++)
         {
@@ -78,6 +79,9 @@ public class Day10 : DayBase
                 }
                 
                 buttonPresses[i].Add(list);
+                
+                if (list.Count > maxButtonCount)
+                    maxButtonCount = list.Count;
             }
             
             var idkPart = parts[parts.Length - 1];
@@ -100,52 +104,504 @@ public class Day10 : DayBase
         }
         
         Console.WriteLine("Max joltage value: " + maxV + ", length: " + maxVLength);
+        Console.WriteLine("Max button press count: " + maxButtonCount);
+    }
+
+    private void JoltageSolveV6()
+    {
+        long sum = 0;
+        
+        //Use 95 for performance testing
+        int l = Math.Min(999, targetStates.Length);
+        for (int i = 0; i < l; i++)
+        {
+            var joltages = joltage[i].ToArray();
+            var buttons = buttonPresses[i].Select(t => t.ToArray()).ToArray();
+            var a = ParseButtonMatrix(buttons, joltages.Length);
+            minSolutionSum = int.MaxValue;
+            
+            Console.WriteLine("----- Processing target state " + (i + 1) + "/" + targetStates.Length);
+            Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(b => "[" + string.Join("-", b) + "]")));
+            Console.WriteLine("Target joltage: " + string.Join(", ", joltages));
+
+            ushort[] xMax = FindMaximums(buttons, joltages);
+            
+            var xState = new short[xMax.Length];
+            for (var i1 = 0; i1 < xState.Length; i1++)
+                xState[i1] = -1;
+            
+            //DisplayButtonMatrix(a); 
+            Console.WriteLine("Xmax: " + string.Join(", ", xMax));
+             
+            int[] orderArray = new int[joltages.Length];
+
+            for (int r = 0; r < orderArray.Length; r++)
+            {
+                orderArray[r] = r;
+            }
+            
+            //var indices = GetRowIndicesByVariableCount(a);
+            var indices = Enumerable.Range(0, joltages.Length)
+                .OrderBy(r => joltages[r])
+                .ThenBy(r => GetVariableCountInRow(a, r))
+                .ToArray();
+            
+            Console.WriteLine("Row computation order: " + string.Join(", ", indices));
+            
+            Solver(a, joltages, xState, xMax, indices, 0, 0);
+            
+            Console.WriteLine("Minimum solution sum for target " + (i + 1) + ": " + minSolutionSum);
+            sum += minSolutionSum;
+        }
+        
+        Console.WriteLine("Sum of steps: " + sum);
     }
     
-    private ushort[] targetState;
-    private ushort[] tempState;
+    private int minSolutionSum;
+    
+    private void Solver(bool[][] a, ushort[] b, short[] xState, ushort[] xMax, int[] rowOrder, int r, int currentSum)
+    {
+        if (currentSum >= minSolutionSum)
+            return;
+        
+        if (r >= rowOrder.Length)
+        {
+            if (xState.Any(v => v == -1))
+                throw new InvalidOperationException();
+            
+            Console.WriteLine("Found new min solution: " + string.Join(", ", xState));
+            minSolutionSum = currentSum;
+            
+            return;
+        }
+        
+        if (r == 0)
+            Console.WriteLine("Starting solver recursion");;
+        
+        var rowIndex = rowOrder[r];
+            
+        //var row = GetRow(a, rowIndex);
+        var targetValue = b[rowIndex];
+            
+        //OutputLinearEquation(row, targetValue);
+            
+        int rowLength = a[0].Length;
+        
+        ushort[] limits = new ushort[rowLength];
+        for (int vindex = 0; vindex < rowLength; vindex++)
+        {
+            var v = GetRowValue(a, rowIndex, vindex);
+            limits[vindex] = v ? xMax[vindex] : (ushort)0;
+        }
+            
+        Queue<ushort[]> solutions = new Queue<ushort[]>();
+        ushort[] indices = new ushort[rowLength];
+        
+        RecursiveLinearSolver(limits, indices, xState, targetValue, solutions, 0, minSolutionSum, 0);
+        
+        if (r == 0)
+            Console.WriteLine("Found " + solutions.Count + " solutions");
+        
+        int initialCount = solutions.Count;
+        
+        List<int> varChanged = new List<int>();
+        while (solutions.Count > 0)
+        {
+            if (r == 0)
+                Console.WriteLine("Processing solution " + (initialCount - solutions.Count) + "/" + initialCount);
+            
+            var solution = solutions.Dequeue();
+            varChanged.Clear();
+            
+            for (int j = 0; j < rowLength; j++)
+            {
+                var val = solution[j];
+                var wasSearched = GetRowValue(a, rowIndex, j);
+                
+                if (wasSearched)
+                {
+                    if (xState[j] == -1)
+                    {
+                        xState[j] = (short)val;
+                        currentSum += val;
+                        varChanged.Add(j);
+                    }
+                    else if (xState[j] != val)
+                    {
+                        Console.WriteLine("Conflict on x" + j + ": existing " + xState[j] + ", new " + val);
+                        throw new InvalidOperationException();
+                    }
+                }
+            }
+            
+            Solver(a, b, xState, xMax, rowOrder, r + 1, currentSum);
+
+            foreach (var index in varChanged)
+            {
+                currentSum -= xState[index];
+                xState[index] = -1;
+            }
+        }
+    }
+
+    private void RecursiveLinearSolver(ushort[] limits, ushort[] indices, short[] xState, int targetResult, Queue<ushort[]> solutions, int depth, int maxSum, int currentSum)
+    {
+        if (currentSum >= maxSum)
+            return;
+        
+        if (depth == limits.Length)
+        {
+            int result = 0;
+            for (int i = 0; i < limits.Length; i++)
+                result += indices[i];
+            
+            if (result == targetResult)
+            {
+                //Console.WriteLine("Found solution: " + string.Join(", ", indices));
+                solutions.Enqueue((ushort[])indices.Clone());
+            }
+            
+            return;
+        }
+
+        var x = xState[depth];
+        var limit = limits[depth];
+
+        if (x == -1)
+        {
+            for (ushort i = 0; i <= limit; i++)
+            {
+                indices[depth] = i;
+                RecursiveLinearSolver(limits, indices, xState, targetResult,solutions, depth + 1, maxSum, currentSum + i);
+            }
+        }
+        else
+        {
+            var val = (ushort)((limit == 0) ? 0 : x);
+            indices[depth] = val;
+            
+            RecursiveLinearSolver(limits, indices, xState, targetResult,solutions, depth + 1, maxSum, currentSum + x);
+        }
+    }
+    
+    private void OutputLinearEquation(bool[] row, ushort targetResult)
+    { 
+        List<string> terms = new List<string>();
+        
+        for (int i = 0; i < row.Length; i++)
+        {
+            if (row[i])
+            {
+                terms.Add("x" + i);
+            }
+        }
+        
+        string equation = string.Join(" + ", terms) + " = " + targetResult;
+        
+        Console.WriteLine("Solving: " + equation);
+    }
+    
+    private int GetVariableCountInRow (bool[][] matrix, int rowIndex)
+    {
+        var row = GetRow(matrix, rowIndex);
+        int count = row.Count(b => b);
+        return count;
+    }
+    
+    private bool GetRowValue (bool[][] matrix, int rowIndex, int colIndex)
+    {
+        return matrix[rowIndex][colIndex];
+    }
+    
+    private bool[] GetRow(bool[][] matrix, int rowIndex)
+    {
+        int cols = matrix[0].Length;
+        bool[] row = new bool[cols];
+        
+        for (int c = 0; c < cols; c++)
+        {
+            row[c] = matrix[rowIndex][c];
+        }
+        
+        return row;
+    }
+    
+    private bool[][] ParseButtonMatrix(ushort[][] buttons, int rows)
+    {
+        bool[]?[] matrix = new bool[rows][];
+        
+        for (int b = 0; b < buttons.Length; b++)
+        {
+            var button = buttons[b];
+            
+            for (int j = 0; j < button.Length; j++)
+            {
+                var index = button[j];
+                
+                if (matrix[index] == null)
+                    matrix[index] = new bool[buttons.Length];
+                
+                matrix[index]![b] = true;
+            }
+        }
+        
+        return matrix!;
+    }
+    
+    private void DisplayButtonMatrix(bool[][] matrix)
+    {
+        int rows = matrix.Length;
+        int cols = matrix[0].Length;
+
+        for (int c = 0; c < cols; c++)
+        {
+            for (int r = 0; r < rows; r++)
+            {
+                Console.Write(matrix[r][c] ? "1 " : "0 ");
+            }
+            Console.WriteLine();
+        }
+    }
+    
+    private ushort[] FindMaximums (ushort[][] buttonArray, ushort[] targetState)
+    {
+        ushort[] maxPresses = new ushort[buttonArray.Length];
+
+        for (int b = 0; b < buttonArray.Length; b++)
+        {
+            var button = buttonArray[b];
+            
+            ushort maxPress = ushort.MaxValue;
+            
+            for (int j = 0; j < button.Length; j++)
+            {
+                var index = button[j];
+                ushort remain = targetState[index];
+
+                if (remain < maxPress)
+                    maxPress = remain;
+            }
+            
+            maxPresses[b] = maxPress;
+        }
+        
+        return maxPresses;
+    }
+    
+    //Nevermind, way to slow
+    /*private void JoltageSolveV5()
+    {
+        /* Algorithm that I came up with that will definetly work and not blow up
+         * based on A * x = b where A is the button matrix, x is the number of presses per button, and b is the target joltage
+         * 
+         * 1. Define maximums for all xn
+         * 2. Seperate into seperate linear equations and solve them
+         * 3. Cross check solutions to filter out invalid ones
+         * 4. Brute force through all solution combinations
+        
+        
+        long sum = 0;
+        
+        for (int i = 0; i < joltage.Length; i++)
+        {
+            var joltages = joltage[i].ToArray();
+            var buttons = buttonPresses[i].Select(t => t.ToArray()).ToArray();
+            var a = ParseButtonMatrix(buttons, joltages.Length);
+            DisplayButtonMatrix(a); 
+            
+            Console.WriteLine("----- Processing target state " + (i + 1) + "/" + targetStates.Length);
+            Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(b => "[" + string.Join("-", b) + "]")));
+            Console.WriteLine("Target joltage: " + string.Join(", ", joltages));
+
+            ushort[] xMax = FindMaximums(buttons, joltages);
+            
+            Console.WriteLine("Xmax: " + string.Join(", ", xMax));
+
+            SolveLinearConstraints(a, xMax, joltages);
+        }
+        
+        Console.WriteLine("Sum of steps: " + sum);
+    }
+
+    private bool[] GetRow(bool[,] matrix, int rowIndex)
+    {
+        int cols = matrix.GetLength(1);
+        bool[] row = new bool[cols];
+        
+        for (int c = 0; c < cols; c++)
+        {
+            row[c] = matrix[rowIndex, c];
+        }
+        
+        return row;
+    }
+    
+    private bool[,] ParseButtonMatrix(ushort[][] buttons, int rows)
+    {
+        var matrix = new bool[rows, buttons.Length];
+        
+        for (int b = 0; b < buttons.Length; b++)
+        {
+            var button = buttons[b];
+            
+            for (int j = 0; j < button.Length; j++)
+            {
+                var index = button[j];
+                matrix[index, b] = true;
+            }
+        }
+        
+        return matrix;
+    }
+    
+    private void DisplayButtonMatrix(bool[,] matrix)
+    {
+        int rows = matrix.GetLength(0);
+        int cols = matrix.GetLength(1);
+        
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                Console.Write(matrix[r, c] ? "1 " : "0 ");
+            }
+            Console.WriteLine();
+        }
+    }
+
+    private void SolveLinearConstraints(bool[,] a, ushort[] xMax, ushort[] b)
+    {
+        int rows = a.GetLength(0);
+        for (int rIndex = 0; rIndex < rows; rIndex++)
+        {
+            var row = GetRow(a, rIndex);
+            
+            Console.WriteLine("Solving row " + rIndex + ": " + string.Join(", ", row.Select(b => b ? "1" : "0")));
+            
+            var solutions = FindSolutions(row, xMax, b[rIndex]);
+            
+            Console.WriteLine("Found " + solutions.Count + " solutions for row " + rIndex);
+        }
+    }
+    
+    private List<ushort[]> FindSolutions(bool[] inputMask, ushort[] xMax, ushort targetValue)
+    {
+        List<ushort[]> solutions = new List<ushort[]>();
+        ushort[] recLoopArray = new ushort[inputMask.Length];
+        
+        for (int vindex = 0; vindex < inputMask.Length; vindex++)
+        {
+            var v = inputMask[vindex];
+            
+            var maxLength = xMax[vindex];
+
+            recLoopArray[vindex] = v ? maxLength : (ushort)0;
+        }
+
+        ushort[] indices = new ushort[inputMask.Length];
+        RecursiveLinearSolver(recLoopArray, indices, targetValue, solutions, 0);
+        
+        return solutions;
+    }
+
+    private void RecursiveLinearSolver(ushort[] limits, ushort[] indices, int targetResult, List<ushort[]> solutions, int depth)
+    {
+        if (depth == limits.Length)
+        {
+            // int result = 0;
+            // for (int i = 0; i < limits.Length; i++)
+            //     result += indices[i];
+            //
+            // if (result == targetResult)
+            // {
+            //     //Console.WriteLine("Found solution: " + string.Join(", ", indices));
+            //     solutions.Add((ushort[])indices.Clone());
+            // }
+            //
+            // return;
+            
+            return;
+        }
+
+        for (ushort i = 0; i <= limits[depth]; i++)
+        {
+            indices[depth] = i;
+            RecursiveLinearSolver(limits, indices, targetResult,solutions, depth + 1);
+        }
+    }
+    
+    private ushort[] FindMaximums (ushort[][] buttonArray, ushort[] targetState)
+    {
+        ushort[] maxPresses = new ushort[buttonArray.Length];
+
+        for (int b = 0; b < buttonArray.Length; b++)
+        {
+            var button = buttonArray[b];
+            
+            ushort maxPress = ushort.MaxValue;
+            
+            for (int j = 0; j < button.Length; j++)
+            {
+                var index = button[j];
+                ushort remain = targetState[index];
+
+                if (remain < maxPress)
+                    maxPress = remain;
+            }
+            
+            maxPresses[b] = maxPress;
+        }
+        
+        return maxPresses;
+    }*/
+    
+    /*private ushort[] targetState;
     private int maxButtonWeight;
     private ushort[][] buttonArray;
-    private Dictionary<long, int> visitedStates;
+    private HashSet<long> visitedStates;
     private PriorityQueue<(ushort[], int), int> priorityQueue;
-    
+
     private void JoltageSolveV4()
     {
         long sum = 0;
         
-        visitedStates = new Dictionary<long, int>();
+        visitedStates = new HashSet<long>();
         priorityQueue = new PriorityQueue<(ushort[], int), int>();
-
+        
         for (int i = 0; i < joltage.Length; i++)
         {
             var joltages = joltage[i].ToArray();
             var buttons = buttonPresses[i];
-            tempState = new ushort[joltages.Length];
             visitedStates.Clear();
             priorityQueue.Clear();
-            
+
             maxButtonWeight = 1;
-            foreach(var b in buttons) maxButtonWeight = Math.Max(maxButtonWeight, b.Count);
+
+            foreach (var b in buttons) maxButtonWeight = Math.Max(maxButtonWeight, b.Count);
             
             Console.WriteLine("----- Processing target state " + i + "/" + targetStates.Length);
-            Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(b => "[" + string.Join("-", b) + "]"))); 
+            Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(b => "[" + string.Join("-", b) + "]")));
             Console.WriteLine("Target joltage: " + string.Join(", ", joltages));
             
             targetState = joltages;
             buttonArray = buttons.Select(t => t.ToArray()).ToArray();
-
-            var solutionSteps = SolveRecOptFinalNoP360Max();
             
+            var solutionSteps = SolveRecOptFinalNoP360Max();
+
             Console.WriteLine("Steps for target " + i + ": " + solutionSteps);
+
             sum += solutionSteps;
         }
         
         Console.WriteLine("Sum of steps: " + sum);
     }
 
+
     private int SolveRecOptFinalNoP360Max()
     {
         priorityQueue.Enqueue((new ushort[targetState.Length], 0), 0);
+        
+        int minSteps = int.MaxValue;
         
         while (priorityQueue.Count > 0)
         {
@@ -153,80 +609,78 @@ public class Day10 : DayBase
             var currentState = item.Item1;
             int targetDepth = item.Item2 + 1;
             
-            if (IsTarget(currentState))
-                return targetDepth - 1;
+            if (targetDepth >= minSteps)
+                continue;
             
             for (int i = 0; i < buttonArray.Length; i++)
             {
                 var button = buttonArray[i];
-            
-                ApplyButton(currentState, button);
                 
-                int distance = CalculatePriority(tempState);
+                var nState = ApplyButton(currentState, button);
+
+                int distance = CalculatePriority(nState);
+                
+                if (distance + targetDepth >= minSteps)
+                    continue;
                 
                 if (distance == -1)
                     continue;
                 
-                var hash = HashState(tempState);
-
-                if (visitedStates.TryGetValue(hash, out var cDepth))
+                if (distance == 0)
                 {
-                    if (cDepth <= targetDepth)
-                        continue;
+                    if (targetDepth < minSteps)
+                    {
+                        minSteps = targetDepth;
+                        Console.WriteLine("New min steps: " + minSteps);
+                    }
                     
-                    visitedStates[hash] = targetDepth;
+                    break;
                 }
-                else
-                    visitedStates[hash] = targetDepth;
                 
-                priorityQueue.Enqueue(((ushort[])tempState.Clone(), targetDepth), distance);
+                if (visitedStates.Add(HashState(nState)))
+                    priorityQueue.Enqueue((nState, targetDepth), distance);
             }
         }
-
-        throw new InvalidOperationException();
-    }
-
-    private void ApplyButton(ushort[] current, ushort[] button)
-    {
-        Array.Copy(current, tempState, current.Length);
         
+        return minSteps;
+    }
+    
+    private ushort[] ApplyButton(ushort[] current, ushort[] button)
+    {
+        ushort[] newState = (ushort[])current.Clone();
+
         for (int j = 0; j < button.Length; j++)
         {
             var index = button[j];
-            tempState[index] += 1;
+
+            newState[index] += 1;
         }
+        
+        return newState;
     }
 
     private int CalculatePriority(ushort[] current)
     {
         int maxDiff = 0;
         int sumDiff = 0;
-
+        
         for (int i = 0; i < current.Length; i++)
         {
             int diff = targetState[i] - current[i];
-            if (diff > maxDiff) maxDiff = diff;
-            sumDiff += diff;
+
+            if (diff > maxDiff) 
+                maxDiff = diff;
             
             if (diff < 0)
                 return -1;
+            
+            sumDiff += diff;
         }
         
         int stepsByMass = (sumDiff + maxButtonWeight - 1) / maxButtonWeight;
-    
-        return Math.Max(maxDiff, stepsByMass);
-    }
-    
-    private bool IsTarget(ushort[] current)
-    {
-        for (int i = 0; i < current.Length; i++)
-        {
-            if (current[i] != targetState[i])
-                return false;
-        }
 
-        return true;
-    }
+        return Math.Max(maxDiff, stepsByMass);
+    }*/
     
     /*private int CalculatePriority(ushort[] current)
     {
