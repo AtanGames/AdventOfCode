@@ -40,7 +40,7 @@ public class Day10 : DayBase
         var lines = GetAocInputAsLines();
 
         var tmp = lines.ToList();
-        tmp.Sort((t1, t2) => t2.Length.CompareTo(t1.Length));
+        tmp.Sort((t1, t2) => t1.Length.CompareTo(t2.Length));
         lines = tmp.ToArray();
         
         targetStates = new (int targetMask, int targetCount)[lines.Length];
@@ -120,6 +120,18 @@ public class Day10 : DayBase
             var a = ParseButtonMatrix(buttons, joltages.Length);
             minSolutionSum = int.MaxValue;
             
+            rowSolutionsCache = new Queue<ushort[]>[joltages.Length];
+            varChangedCache = new List<int>[joltages.Length];
+            limitsCache = new ushort[joltages.Length][];
+            indicesCache = new ushort[joltages.Length][];
+            for (int r = 0; r < joltages.Length; r++)
+            {
+                rowSolutionsCache[r] = new Queue<ushort[]>();
+                varChangedCache[r] = new List<int>();
+                limitsCache[r] = new ushort[buttons.Length];
+                indicesCache[r] = new ushort[buttons.Length];
+            }
+            
             Console.WriteLine("----- Processing target state " + (i + 1) + "/" + targetStates.Length);
             Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(b => "[" + string.Join("-", b) + "]")));
             Console.WriteLine("Target joltage: " + string.Join(", ", joltages));
@@ -158,6 +170,12 @@ public class Day10 : DayBase
     }
     
     private int minSolutionSum;
+    private Queue<ushort[]>[] rowSolutionsCache;
+    private List<int>[] varChangedCache;
+    private ushort[][] limitsCache;
+    private ushort[][] indicesCache;
+    
+    private readonly System.Diagnostics.Stopwatch progressWatch = System.Diagnostics.Stopwatch.StartNew();
     
     private void Solver(bool[][] a, ushort[] b, short[] xState, ushort[] xMax, int[] rowOrder, int r, int currentSum)
     {
@@ -187,31 +205,51 @@ public class Day10 : DayBase
             
         int rowLength = a[0].Length;
         
-        ushort[] limits = new ushort[rowLength];
+        ushort[] limits = limitsCache[r];
         for (int vindex = 0; vindex < rowLength; vindex++)
         {
             var v = GetRowValue(a, rowIndex, vindex);
             limits[vindex] = v ? xMax[vindex] : (ushort)0;
         }
             
-        Queue<ushort[]> solutions = new Queue<ushort[]>();
-        ushort[] indices = new ushort[rowLength];
+        var solutionCache = rowSolutionsCache[r];
+        solutionCache.Clear();
+        ushort[] indices = indicesCache[r];
+
+        for (int i = 0; i < indices.Length; i++)
+            indices[i] = 0;
         
-        RecursiveLinearSolver(limits, indices, xState, targetValue, solutions, 0, minSolutionSum, 0);
+        RecursiveLinearSolver(limits, indices, xState, targetValue, solutionCache, 0, minSolutionSum, 0);
         
         if (r == 0)
-            Console.WriteLine("Found " + solutions.Count + " solutions");
+            Console.WriteLine("Found " + solutionCache.Count + " solutions");
         
-        int initialCount = solutions.Count;
+        //int initialCount = solutions.Count;
+
+        List<int> varChanged = varChangedCache[rowIndex];
+
+        int rootSolutionsProcessed = 0;
+        int totalSolutions = solutionCache.Count;
         
-        List<int> varChanged = new List<int>();
-        while (solutions.Count > 0)
+        while (solutionCache.Count > 0)
         {
-            if (r == 0)
-                Console.WriteLine("Processing solution " + (initialCount - solutions.Count) + "/" + initialCount);
-            
-            var solution = solutions.Dequeue();
+            var solution = solutionCache.Dequeue();
             varChanged.Clear();
+            
+            if (r == 0)
+            {
+                rootSolutionsProcessed++;
+
+                if (progressWatch.ElapsedMilliseconds >= 1000)
+                {
+                    Console.WriteLine(
+                        "Progress: " + rootSolutionsProcessed + " / " + totalSolutions +
+                        " (" + (rootSolutionsProcessed * 100.0 / totalSolutions).ToString("F1") + "%)"
+                    );
+
+                    progressWatch.Restart();
+                }
+            }
             
             for (int j = 0; j < rowLength; j++)
             {
