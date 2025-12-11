@@ -28,7 +28,7 @@ public class Day10 : DayBase
         
         Stopwatch sw = Stopwatch.StartNew();
 
-        JoltageSolveV6();
+        JoltageSolveV8();
         
         sw.Stop();
         
@@ -106,13 +106,427 @@ public class Day10 : DayBase
         Console.WriteLine("Max joltage value: " + maxV + ", length: " + maxVLength);
         Console.WriteLine("Max button press count: " + maxButtonCount);
     }
+    
+    /// <summary>
+    /// Im in pain
+    /// </summary>
+    /// <exception cref="InvalidOperationException"></exception>
+    private void JoltageSolveV8 ()
+    {        
+        long sum = 0;
+        
+        List<short[]> solutionsCache = new List<short[]>();
+        
+        for (int i = 0; i < joltage.Length; i++)
+        {
+            var buttons = buttonPresses[i].Select(t => t.ToArray()).ToArray();
+            var b = joltage[i].ToArray();
+            var a = ParseButtonMatrix(buttons, b, b.Length);
+            ushort[] xMax = FindMaximums(buttons, b);
 
-    private void JoltageSolveV6()
+            var originalA = (double[,])a.Clone();
+            
+            //A * x = b
+            
+            Console.WriteLine("----- Processing target state " + (i + 1) + "/" + targetStates.Length);
+            Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(btn => "[" + string.Join("-", btn) + "]")));
+            Console.WriteLine("Target joltage: " + string.Join(", ", b));
+            Console.WriteLine("Xmax: " + string.Join(", ", xMax));
+            
+            DisplayMatrix(a);
+            
+            Console.WriteLine("Performing Gauss elimination...");
+            a = GaussElimination(a);
+            
+            DisplayMatrix(a);
+            var freeVars = GetFreeVariables(a);
+            
+            Console.WriteLine("Free variables: " + string.Join(", ", freeVars));
+
+            var solutions = new Queue<short[]>();
+            var state = new short[buttons.Length];
+            for (int j = 0; j < state.Length; j++)
+                state[j] = -1;
+            
+            GetSolutionsRec(state, freeVars, xMax, solutions, 0);
+            Console.WriteLine("Found " + solutions.Count + " solutions");
+
+            var solution = SolveLinearSystem(a, xMax, solutions);
+            var min = solution.Sum(v => v);
+            
+            solutionsCache.Add(solution);
+            
+            Console.WriteLine("Minimum solution sum for target " + (i + 1) + ": " + min);
+            sum += min;
+
+            if (!VerifySolution(originalA, solution))
+                throw new InvalidOperationException();
+        }
+        
+        Console.WriteLine("--- Solutions summary ---");
+        for (int i = 0; i < solutionsCache.Count; i++)
+        {
+            var solution = solutionsCache[i];
+            var s = solution.Sum(v => v);
+            
+            Console.WriteLine($"[{s}] Target " + (i + 1) + ": " + string.Join(", ", solution));
+        }
+        
+        Console.WriteLine("Sum of steps: " + sum);
+    }
+    
+    private short[] SolveLinearSystem (double[,] a, ushort[] xMax, Queue<short[]> solutions)
+    {
+        int rows = a.GetLength(0);
+        int cols = a.GetLength(1);
+        
+        int currentMinimumSum = int.MaxValue;
+        short[] currentSolution = [];
+        
+        while (solutions.Count > 0)
+        {
+            var solution = solutions.Dequeue();
+            bool validSolution = true;
+            
+            for (int r = rows - 1; r >= 0; r--)
+            {
+                int pivotIndex = -1;
+                
+                for (int c = 0; c < cols - 1; c++)
+                {
+                    if (Math.Abs(a[r, c]) > 1e-5)
+                    {
+                        pivotIndex = c;
+                        break;
+                    }
+                }
+                
+                if (pivotIndex == -1)
+                    continue;
+                
+                double sum = a[r, cols - 1];
+                
+                for (int c = pivotIndex + 1; c < cols - 1; c++)
+                {
+                    sum -= a[r, c] * solution[c];
+                }
+                
+                double xValue = sum / a[r, pivotIndex];
+                
+                if (xValue < -0.1 || xValue > xMax[pivotIndex])
+                {
+                    validSolution = false;
+                    break;
+                }
+                
+                if (!IsValidInt(xValue, out int intValue))
+                {
+                    validSolution = false;
+                    break;
+                }
+                
+                solution[pivotIndex] = (short)intValue;
+            }
+            
+            if (validSolution && VerifySolution(a, solution))
+            {
+                int sum = solution.Sum(v => v);
+                
+                if (sum < currentMinimumSum)
+                {
+                    currentMinimumSum = sum;
+                    currentSolution = solution;
+                    Console.WriteLine("Valid solution: " + string.Join(", ", solution));
+                }
+            }
+        }
+
+        return currentSolution;
+    }
+    
+    private bool VerifySolution(double[,] matrix, short[] x)
+    {
+        int rows = matrix.GetLength(0);
+        int cols = matrix.GetLength(1);
+        
+        for (int r = 0; r < rows; r++)
+        {
+            double sum = 0.0;
+            
+            for (int c = 0; c < cols - 1; c++)
+            {
+                sum += matrix[r, c] * x[c];
+            }
+
+            if (Math.Abs(sum - matrix[r, cols - 1]) > 1e-5)
+                return false;
+        }
+        
+        return true;
+    }
+
+    private bool IsValidInt(double value, out int val)
+    {
+        val = (int)Math.Round(value);
+
+        //Assume it is a integer, because I SPENT ONE HOUR DEBUGGING BECAUSE OF FLOATING POINT PRECISION ISSUES
+        return true;
+        //return Math.Abs(value - val) < 1e-5;
+    }
+
+    private void GetSolutionsRec(short[] state, int[] freeVars, ushort[] xMax, Queue<short[]> solutions, int index)
+    {
+        if (index >= freeVars.Length)
+        {
+            solutions.Enqueue((short[])state.Clone());
+            return;
+        }
+        
+        var currentVar = freeVars[index];
+        var currentMax = xMax[currentVar];
+        
+        for (short x = 0; x <= currentMax; x++)
+        {
+            state[currentVar] = x;
+            
+            GetSolutionsRec(state, freeVars, xMax, solutions,index + 1);
+        }
+    }
+    
+    private int[] GetFreeVariables(double[,] matrix)
+    {
+        int rows = matrix.GetLength(0);
+        int cols = matrix.GetLength(1);
+        
+        bool[] isPivotColumn = new bool[cols - 1];
+        
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols - 1; c++)
+                if (Math.Abs(matrix[r, c]) > 1e-5)
+                {
+                    isPivotColumn[c] = true;
+                    break;
+                }
+        
+        List<int> freeVars = new List<int>();
+        
+        for (int c = 0; c < cols - 1; c++)
+            if (!isPivotColumn[c])
+                freeVars.Add(c);
+        
+        return freeVars.ToArray();
+    }
+    
+    private double[,] GaussElimination(double[,] matrix)
+    {
+        int rows = matrix.GetLength(0);
+        int cols = matrix.GetLength(1);
+        int pivotRow = 0;
+        
+        for (int col = 0; col < cols - 1 && pivotRow < rows; col++)
+        {
+            double largestElement = 0;
+            int largestRowIndex = -1;
+
+            for (int r = pivotRow; r < rows; r++)
+            {
+                if (Math.Abs(matrix[r, col]) > largestElement)
+                {
+                    largestElement = Math.Abs(matrix[r, col]);
+                    largestRowIndex = r;
+                }
+            }
+            
+            if (largestRowIndex == -1 || Math.Abs(largestElement) < 1e-5)
+                continue;
+            
+            matrix = SwapRows(matrix, pivotRow, largestRowIndex);
+
+            for (int i = (pivotRow + 1); i < rows; i++)
+            {
+                double factor = matrix[i, col] / matrix[pivotRow, col];
+                
+                matrix[i, col] = 0.0;
+                
+                for (int j = (col + 1); j < cols; j++)
+                {
+                    matrix[i, j] -= factor * matrix[pivotRow, j];
+                }
+            }
+            
+            // Console.WriteLine();
+            // DisplayMatrix(matrix);
+            // Console.WriteLine();
+            pivotRow++;
+        }
+        
+        return matrix;
+    }
+
+    /// <summary>
+    /// Elementare zeilenoperation nr 1 ofc
+    /// </summary>
+    private double[,] SwapRows(double[,] matrix, int row1, int row2)
+    {
+        int cols = matrix.GetLength(1);
+        
+        for (int c = 0; c < cols; c++)
+        {
+            (matrix[row1, c], matrix[row2, c]) = (matrix[row2, c], matrix[row1, c]);
+        }
+        
+        return matrix;
+    }
+    
+    private double[,] ParseButtonMatrix(ushort[][] buttons, ushort[] target, int rows)
+    {
+        var matrix = new double[rows, buttons.Length + 1];
+        
+        for (int b = 0; b < buttons.Length; b++)
+        {
+            var button = buttons[b];
+            
+            for (int j = 0; j < button.Length; j++)
+            {
+                var index = button[j];
+                matrix[index, b] = 1.0;
+            }
+        }
+        
+        for (int r = 0; r < rows; r++)
+        {
+            matrix[r, buttons.Length] = target[r];
+        }
+        
+        return matrix;
+    }
+    
+    private void DisplayMatrix(double[,] matrix)
+    {
+        int rows = matrix.GetLength(0);
+        int cols = matrix.GetLength(1);
+
+        int[] w = new int[cols];
+
+        for (int c = 0; c < cols; c++)
+        {
+            int maxLen = 0;
+            for (int r = 0; r < rows; r++)
+            {
+                int len = matrix[r, c].ToString().Length;
+                if (len > maxLen)
+                {
+                    maxLen = len;
+                }
+            }
+            w[c] = maxLen;
+        }
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                if (c == cols - 1)
+                {
+                    Console.Write("| ");
+                }
+
+                string val = matrix[r, c].ToString();
+                Console.Write(val.PadLeft(w[c]) + " ");
+            }
+
+            Console.WriteLine();
+        }
+    }
+    
+    private ushort[] FindMaximums (ushort[][] buttonArray, ushort[] targetState)
+    {
+        ushort[] maxPresses = new ushort[buttonArray.Length];
+
+        for (int b = 0; b < buttonArray.Length; b++)
+        {
+            var button = buttonArray[b];
+            
+            ushort maxPress = ushort.MaxValue;
+            
+            for (int j = 0; j < button.Length; j++)
+            {
+                var index = button[j];
+                ushort remain = targetState[index];
+
+                if (remain < maxPress)
+                    maxPress = remain;
+            }
+            
+            maxPresses[b] = (ushort)(maxPress + 1);
+        }
+        
+        return maxPresses;
+    }
+    
+    /*private void JoltageSolveV7()
     {
         long sum = 0;
+
+        int threadID = 0;
         
         //Use 95 for performance testing
         int l = Math.Min(999, targetStates.Length);
+        for (int i = 0; i < l; i++)
+        {
+            var joltages = joltage[i].ToArray();
+            var buttons = buttonPresses[i].Select(t => t.ToArray()).ToArray();
+            var a = ParseButtonMatrix(buttons, joltages.Length);
+
+            Day10_Solver.Solver solver = new Day10_Solver.Solver(joltages.Length, buttons.Length, threadID);
+            threadID++;
+            
+            Console.WriteLine("----- Processing target state " + (i + 1) + "/" + targetStates.Length);
+            Console.WriteLine("Buttons: " + string.Join(", ", buttons.Select(b => "[" + string.Join("-", b) + "]")));
+            Console.WriteLine("Target joltage: " + string.Join(", ", joltages));
+
+            ushort[] xMax = FindMaximums(buttons, joltages);
+            
+            var xState = new short[xMax.Length];
+            for (var i1 = 0; i1 < xState.Length; i1++)
+                xState[i1] = -1;
+            
+            //DisplayButtonMatrix(a); 
+            Console.WriteLine("Xmax: " + string.Join(", ", xMax));
+             
+            int[] orderArray = new int[joltages.Length];
+
+            for (int r = 0; r < orderArray.Length; r++)
+            {
+                orderArray[r] = r;
+            }
+            
+            //var indices = GetRowIndicesByVariableCount(a);
+            var indices = Enumerable.Range(0, joltages.Length)
+                .OrderBy(r => joltages[r])
+                .ThenBy(r => GetVariableCountInRow(a, r))
+                .ToArray();
+            
+            Console.WriteLine("Row computation order: " + string.Join(", ", indices));
+            
+            solver.Solve(a, joltages, xState, xMax, indices, 0, 0, -1);
+            
+            int solutionSteps = solver.GetMinSolutionSum();
+            Console.WriteLine("Minimum solution sum for target " + (i + 1) + ": " + solutionSteps);
+            sum += solutionSteps;
+        }
+        
+        Console.WriteLine("Sum of steps: " + sum);
+    }*/
+    
+   /*private void JoltageSolveV6()
+    {
+        long sum = 0;
+        
+        List<short[]> solutionsCache = new List<short[]>();
+        
+        //Use 95 for performance testing
+        int l = Math.Min(95, targetStates.Length);
         for (int i = 0; i < l; i++)
         {
             var joltages = joltage[i].ToArray();
@@ -144,13 +558,6 @@ public class Day10 : DayBase
             
             //DisplayButtonMatrix(a); 
             Console.WriteLine("Xmax: " + string.Join(", ", xMax));
-             
-            int[] orderArray = new int[joltages.Length];
-
-            for (int r = 0; r < orderArray.Length; r++)
-            {
-                orderArray[r] = r;
-            }
             
             //var indices = GetRowIndicesByVariableCount(a);
             var indices = Enumerable.Range(0, joltages.Length)
@@ -164,12 +571,22 @@ public class Day10 : DayBase
             
             Console.WriteLine("Minimum solution sum for target " + (i + 1) + ": " + minSolutionSum);
             sum += minSolutionSum;
+            
+            solutionsCache.Add(bestSolution);
+        }
+        
+        Console.WriteLine("--- Solutions summary ---");
+        for (int i = 0; i < solutionsCache.Count; i++)
+        {
+            var solution = solutionsCache[i];
+            Console.WriteLine("Target " + (i + 1) + ": " + string.Join(", ", solution));
         }
         
         Console.WriteLine("Sum of steps: " + sum);
     }
     
     private int minSolutionSum;
+    private short[] bestSolution;
     private Queue<ushort[]>[] rowSolutionsCache;
     private List<int>[] varChangedCache;
     private ushort[][] limitsCache;
@@ -189,6 +606,7 @@ public class Day10 : DayBase
             
             Console.WriteLine("Found new min solution: " + string.Join(", ", xState));
             minSolutionSum = currentSum;
+            bestSolution = (short[])xState.Clone();
             
             return;
         }
@@ -281,7 +699,7 @@ public class Day10 : DayBase
             }
         }
     }
-
+    
     private void RecursiveLinearSolver(ushort[] limits, ushort[] indices, short[] xState, int targetResult, Queue<ushort[]> solutions, int depth, int maxSum, int currentSum)
     {
         if (currentSum >= maxSum)
@@ -863,14 +1281,16 @@ public class Day10 : DayBase
     {
         long sum = 0;
         visitedStates = new HashSet<long>();
+        
+        List<int[]> solutions = new List<int[]>();
 
-        for (int i = 0; i < targetStates.Length; i++)
+        for (int i = 0; i < 37; i++)
         {
-            var joltages = joltage[i].ToArray();
+            var joltages = joltage[i].Select(t => (int)t).ToArray();
             targetState = StateToInt(joltages);
             
             buttonPresses[i].Sort((a, b) => b.Count - a.Count);
-            currentButtons = buttonPresses[i].Select(t => t.ToArray()).ToArray();
+            currentButtons = buttonPresses[i].Select(t => t.Select(f => (int)f).ToArray()).ToArray();
             
             var buttonScores = new int[currentButtons.Length];
 
@@ -901,7 +1321,9 @@ public class Day10 : DayBase
                 int[] state = new int[joltages.Length];
                 visitedStates.Clear();
             
-                SearchRec(state, joltages, 0);
+                int[] indices = new int[currentButtons.Length];
+                
+                SearchRec(state, indices,joltages, 0);
                 
                 if (bestSteps < s)
                     break;
@@ -912,6 +1334,17 @@ public class Day10 : DayBase
             Console.WriteLine("Best steps for target " + i + ": " + bestSteps);
             
             sum += bestSteps;
+            
+            solutions.Add(solution);
+        }
+        
+        Console.WriteLine("--- Solutions summary ---");
+        for (int i = 0; i < solutions.Count; i++)
+        {
+            var solution = solutions[i];
+            var s = solution.Sum();
+            
+            Console.WriteLine($"[{s}] Target " + (i + 1) + ": " + string.Join(", ", solution));
         }
         
         Console.WriteLine("Sum of best steps: " + sum);
@@ -921,8 +1354,10 @@ public class Day10 : DayBase
     private long targetState;
     private int[][] currentButtons;
     private HashSet<long> visitedStates;
+
+    private int[] solution;
     
-    private void SearchRec(int[] states, int[] target, int steps)
+    private void SearchRec(int[] states, int[] indices, int[] target, int steps)
     {
         if (steps >= bestSteps)
             return;
@@ -941,6 +1376,7 @@ public class Day10 : DayBase
             {
                 bestSteps = steps;
                 Console.WriteLine("New best steps: " + bestSteps);
+                solution = (int[])indices.Clone();
             }
 
             return;
@@ -955,9 +1391,13 @@ public class Day10 : DayBase
                 var index = button[j];
                 states[index] += 1;
             }
+            
+            indices[b] += 1;
 
-            SearchRec(states, target, steps + 1);
-
+            SearchRec(states, indices, target, steps + 1);
+            
+            indices[b] -= 1;
+            
             for (int j = 0; j < button.Length; j++)
             {
                 var index = button[j];
@@ -987,7 +1427,7 @@ public class Day10 : DayBase
         int lowerBound = steps + maxRemain;
 
         return lowerBound >= bestSteps;
-    }*/
+    }
     
     //Oh BFS is too slow? And ive spent 2 hours already?
     /*private void JoltageSolve()
@@ -1139,7 +1579,7 @@ public class Day10 : DayBase
     /// </summary>
     /// <param name="values"></param>
     /// <returns></returns>
-    long HashState(ushort[] values)
+    long StateToInt(int[] values)
     {
         unchecked
         {

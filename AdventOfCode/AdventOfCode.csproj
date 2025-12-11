@@ -6,12 +6,6 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-        <Optimize>true</Optimize>
-        <PublishAot>true</PublishAot>
-        <ReadyToRun>true</ReadyToRun>
-        <TieredCompilation>true</TieredCompilation>
-        <TieredPGO>true</TieredPGO>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
