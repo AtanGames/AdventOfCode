@@ -10,7 +10,7 @@ class Program
         var sessionToken = File.ReadAllText("../../../../session.txt").Trim();
         FileFetch.SetSessionToken(sessionToken);
         
-        new Day10().Run();
+        new Day12().Run();
         
         Console.ReadKey();
     }
